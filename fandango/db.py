@@ -39,9 +39,248 @@ This package implements a simplified acces to MySQL using FriendlyDB object.
 
 Go to http://mysql-python.sourceforge.net/MySQLdb.html for further information
 """
+import time
+from datetime import datetime, timedelta
 
-import time,datetime,log,traceback,sys
+import log
+import traceback
 import MySQLdb
+
+from cassandra import cluster
+from cassandra.policies import RoundRobinPolicy
+from cassandra.auth import PlainTextAuthProvider
+
+
+class FriendlyCassDB(log.Logger):
+
+    # Cassandra dont have this functionality?
+    # autocommit = True
+    # default_session for what???
+    def __init__(self, db_name, contact_points='', user='', passwd='', loglevel='WARNING', use_list=False,
+                 port=9042, policy=None):
+
+        self.call__init__(log.Logger, self.__class__.__name__, format='%(levelname)-8s %(asctime)s %(name)s: %(message)s')
+        self.setLogLevel(loglevel or 'WARNING')
+
+        self.db_name = db_name
+        self.contact_points = contact_points
+        self.port = port
+        self.default_policy = RoundRobinPolicy() if policy is None else policy
+        self.auth = self.setAuth(user, passwd) if not user.__eq__("") and passwd.__eq__("") else None
+        self.cluster = None
+        self.renewCassConnection()
+        self.session = None
+        self._recursion = 0
+        self.use_list = use_list
+        self.tables = {}
+
+    def setAuth(self, user, passwd):
+        """ Set User and Password to access Cassandra """
+        return PlainTextAuthProvider(username=user, password=passwd)
+
+    def renewCassConnection(self):
+        try:
+            if hasattr(self, 'db') and self.db:
+                self.cluster.shutdown()
+                del self.cluster
+
+            if self.auth:
+
+                self.cluster = cluster.Cluster(contact_points=self.contact_points, port=self.port,
+                                               load_balancing_policy=self.default_policy,
+                                               auth_provider=self.auth)
+            else:
+
+                self.cluster = cluster.Cluster(contact_points=self.contact_points, port=self.port,
+                                               load_balancing_policy=self.default_policy)
+        except Exception as e:
+            self.error('Unable to create a Cassandra connection to "%s"@%s.%s: %s' %
+                       (self.auth.username, self.cluster.__str__(), self.db_name, str(e)))
+            raise e
+
+    def getSession(self, renew=True, keyspace=None):
+
+        try:
+            if renew and self.session:
+                if not self._recursion:
+                    self.session.shutdown()
+                    del self.session
+            if renew or not self.session:
+                self.session = self.cluster.connect(self.db_name if keyspace is None else keyspace)
+            return self.session
+        except Exception as e:
+            print e
+            print traceback.format_exc()
+            self.renewCassConnection()
+            self._recursion += 1
+            return self.getSession(renew=True, keyspace=keyspace if keyspace is not None else keyspace)
+
+    # NOT TESTED YET!
+    def Select(self, what, tables, clause='', group='', order='', limit='', distinct=False, asDict=False):
+
+        '''
+        Allows to create and execute Select queries using Lists as arguments
+        @return depending on param asDict it returns a list or lists or a list of dictionaries with results
+        '''
+        if type(what) is list:
+
+            what = ','.join(what) if len(what) > 1 else what[0]
+        if type(tables) is list:
+
+            tables = ','.join(tables) if len(tables) > 1 else tables[0]
+        if type(clause) is list:
+
+            clause = ' and '.join('(%s)' % c for c in clause) if len(clause) > 1 else clause[0]
+        elif type(clause) is dict:
+            clause1 = ''
+            for i in range(len(clause)):
+                k, v = clause.items()[i]
+                clause1 += "%s like '%s'" % (k, v) if type(v) is str else '%s=%s' % (k, str(v))
+                if (i + 1) < len(clause):
+
+                    clause1 += " and "
+            clause = clause1
+
+        if type(group) is list:
+
+            group = ','.join(group) if len(group) > 1 else group[0]
+
+        query = 'SELECT ' + (distinct and ' DISTINCT ' or '') + ' %s' % what
+        if tables:
+
+            query += ' FROM %s' % tables
+        if clause:
+
+            query += ' WHERE %s' % clause
+        if group:
+
+            group += ' GROUP BY %s' % group
+        if order:
+
+            query += ' ORDER BY %s' % order
+        if limit:
+
+            query += ' LIMIT %s' % limit
+
+        return self.Query(query, True, asDict=asDict)
+
+    # asDict = False
+    # jest to potrzebne??
+    def Query(self, query, export=True, asDict=False, to_bind=None):
+        """ Executes a query directly in the database
+        @param query SQL query to be executed
+        @param export If it's True, it returns directly the values instead of a cursor
+        @return the executed cursor, values can be retrieved by executing cursor.fetchall()
+        """
+        try:
+            try:
+
+                q = self.getSession()
+
+                if to_bind is not None:
+                    query = self.bind_query(q, query, to_bind)
+
+                resultSet = q.execute(query)
+            except:
+
+                self.renewCassConnection()
+                q = self.getSession()
+                resultSet = q.execute(query)
+        except:
+
+            print('Query(%s) failed!' % query)
+            raise
+
+        # TO-DO: TEST WHERE THIS IS USING!
+        if not export:
+            return resultSet
+
+        elif not asDict or self.use_list:
+
+            return self.fetchall(resultSet)
+        else:
+
+            return self.toDict(resultSet)
+
+    def fetchall(self, resultSet=None):
+        """
+        This method provides a custom replacement to cursor.fetchall() method.
+        It is used to return a list instead of a big tuple; what seems to cause trouble to python garbage collector.
+        """
+        vals = []
+        for row in resultSet:
+            vals.append(list(row))
+        return vals
+
+    def toDict(self, resultSet):
+        '''
+        Converts ReslutSet to a N-D dict
+        '''
+        v = []
+        for row in resultSet:
+            d = {}
+            i = 0
+            for k in row._fields:
+                d[k] = row[i]
+                i += 1
+            v.append(d)
+        return v
+
+    def getTables(self, load=False):
+        ''' Initializes the keys of the tables dictionary and returns these keys. '''
+        if load or not self.tables:
+
+            q = self.Query("SELECT columnfamily_name FROM system.schema_columnfamilies "
+                           "WHERE keyspace_name='%s'" % self.db_name)
+            
+            [self.tables.__setitem__(str(t[0]), []) for t in q]
+        return sorted(self.tables.keys())
+
+    def getTableCols(self, table):
+        ''' Returns the column names for the given table, and stores these values in the tables dict. '''
+        self.getTables()
+        if not self.tables[table]:
+
+            q = self.Query("SELECT column_name FROM system.schema_columns WHERE keyspace_name='%s' "
+                           "AND columnfamily_name = '%s'" % (self.db_name, table), False)
+            [self.tables[table].append(str(t[0])) for t in q]
+        return self.tables[table]
+
+    def convert_to_local_epoch_time(self, utc_datetime):
+
+        now_timestamp = time.time()
+        offset = datetime.fromtimestamp(now_timestamp) - datetime.utcfromtimestamp(now_timestamp)
+        return int((utc_datetime + offset).strftime('%s'))
+
+    def convert_to_local_datatime_time(self, utc_datetime):
+
+        now_timestamp = time.time()
+        offset = datetime.fromtimestamp(now_timestamp) - datetime.utcfromtimestamp(now_timestamp)
+        return datetime.strptime(str(utc_datetime + offset), "%Y-%m-%d %H:%M:%S")
+
+    def get_period(self, start_date, stop_date):
+
+        stop = stop_date.split(" ")[0]
+
+        increment_date = datetime.strptime(start_date, "%Y-%m-%d %H:%M:%S")
+        tmp_date = start_date.split(" ")[0]
+        period = [tmp_date]
+
+        while not stop.__eq__(tmp_date):
+
+            increment_date = (increment_date + timedelta(days=1))
+            tmp_date = datetime.strftime(increment_date, "%Y-%m-%d")
+
+            period.append(tmp_date)
+
+        return period
+
+    @staticmethod
+    def bind_query(q, query, to_bind):
+
+        query = q.prepare(query)
+        return query.bind(to_bind)
+
 
 class FriendlyDB(log.Logger):
     """ 
@@ -71,7 +310,7 @@ class FriendlyDB(log.Logger):
         if hasattr(self,'__cursor') and self._cursor: 
             self._cursor.close()
             del self._cursor
-        if hasattr(self,'db') and self.db: 
+        if hasattr(self,'db') and self.db:
             self.db.close()
             del self.db
    
@@ -87,7 +326,6 @@ class FriendlyDB(log.Logger):
         except Exception,e:
             self.error('Unable to set MySQLdb.connection.autocommit to %s'%autocommit)
             raise Exception,e
-        
         
     def renewMySQLconnection(self):
         try:
@@ -124,11 +362,11 @@ class FriendlyDB(log.Logger):
             return self.getCursor(renew=True,klass=klass)
    
     def tuples2lists(self,tuples):
-        ''' 
-        Converts a N-D tuple to a N-D list 
+        '''
+        Converts a N-D tuple to a N-D list
         '''
         return [self.tuples2lists(t) if type(t) is tuple else t for t in tuples]
-   
+
     def table2dicts(self,keys,table):
         ''' Converts a 2-D table and a set of keys in a list of dictionaries '''
         result = []
