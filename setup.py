@@ -57,7 +57,7 @@ entry_points = {
 
 
 setup(
-    name="fandango",
+    name="lib-alba-fandango",
     version=str(release).strip(),
     packages=find_packages(),
     description="Simplify the configuration of big Tango control systems",
