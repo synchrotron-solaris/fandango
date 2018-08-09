@@ -1,0 +1,95 @@
+# GitLab CI configuration for automated RPM build from Python package source
+
+stages:
+  - build
+  - deploy
+  - update-repo
+  - docs
+
+
+before_script:
+  - eval $(ssh-agent -s)
+  - echo "$REPO_SSH_KEY" | tr -d '\r' | ssh-add - > /dev/null
+  - mkdir -p ~/.ssh
+  - chmod 700 ~/.ssh
+
+
+build-production:
+  stage: build
+  script:
+    - python setup.py bdist_rpm
+  artifacts:
+    paths:
+      - dist
+  only:
+    - master
+  tags:
+    - rpm
+
+build-testing:
+  stage: build
+  script:
+    - python setup.py bdist_rpm
+  artifacts:
+    paths:
+      - dist
+  only:
+    - develop
+  tags:
+    - rpm
+
+
+deploy-production:
+  stage: deploy
+  script:
+    - scp -o stricthostkeychecking=no dist/*.noarch.rpm ci@192.168.130.90:/var/ftp/solaris-repo/el7/x86_64/
+    - scp -o stricthostkeychecking=no dist/*.src.rpm ci@192.168.130.90:/var/ftp/solaris-repo/el7/SRPMS/
+  only:
+    - master
+  tags:
+    - rpm
+
+deploy-testing:
+  stage: deploy
+  script:
+    - scp -o stricthostkeychecking=no dist/*.noarch.rpm ci@192.168.130.90:/var/ftp/solaris-repo/el7/x86_64/
+    - scp -o stricthostkeychecking=no dist/*.src.rpm ci@192.168.130.90:/var/ftp/solaris-repo/el7/SRPMS/
+  only:
+    - develop
+  tags:
+    - rpm
+
+
+update-production:
+  stage: update-repo
+  script:
+    - ssh -o stricthostkeychecking=no ci@192.168.130.90 sudo /usr/local/bin/create-solaris-repo.sh
+  only:
+    - master
+  tags:
+    - rpm
+
+update-testing:
+  stage: update-repo
+  script:
+    - ssh -o stricthostkeychecking=no ci@192.168.130.90 sudo /usr/local/bin/create-solaris-repo.sh
+  only:
+    - develop
+  tags:
+    - rpm
+
+pages:
+  stage: docs
+  before_script:
+    - echo "Building documentation"
+  script:
+    - git --version
+    - python setup.py build_sphinx
+    - mv docs/build/ public/
+  artifacts:
+    paths:
+      - public
+  only:
+    - master
+  tags:
+    - docs
