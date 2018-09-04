@@ -66,7 +66,7 @@ class FriendlyCassDB(log.Logger):
         self.contact_points = contact_points
         self.port = port
         self.default_policy = RoundRobinPolicy() if policy is None else policy
-        self.auth = self.setAuth(user, passwd) if not user.__eq__("") and passwd.__eq__("") else None
+        self.auth = self.setAuth(user, passwd) if not user.__eq__("") and not passwd.__eq__("") else None
         self.cluster = None
         self.renewCassConnection()
         self.session = None
