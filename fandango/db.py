@@ -46,6 +46,7 @@ import log
 import traceback
 import MySQLdb
 
+# TO-DO: NEW STRONG REQUIREMENT TO FANDANGO!
 from cassandra import cluster
 from cassandra.policies import RoundRobinPolicy
 from cassandra.auth import PlainTextAuthProvider
@@ -53,9 +54,6 @@ from cassandra.auth import PlainTextAuthProvider
 
 class FriendlyCassDB(log.Logger):
 
-    # Cassandra dont have this functionality?
-    # autocommit = True
-    # default_session for what???
     def __init__(self, db_name, contact_points='', user='', passwd='', loglevel='WARNING', use_list=False,
                  port=9042, policy=None):
 
@@ -115,7 +113,7 @@ class FriendlyCassDB(log.Logger):
             self._recursion += 1
             return self.getSession(renew=True, keyspace=keyspace if keyspace is not None else keyspace)
 
-    # NOT TESTED YET!
+    # TO-DO: NOT TESTED YET!
     def Select(self, what, tables, clause='', group='', order='', limit='', distinct=False, asDict=False):
 
         '''
@@ -164,8 +162,6 @@ class FriendlyCassDB(log.Logger):
 
         return self.Query(query, True, asDict=asDict)
 
-    # asDict = False
-    # jest to potrzebne??
     def Query(self, query, export=True, asDict=False, to_bind=None):
         """ Executes a query directly in the database
         @param query SQL query to be executed
@@ -191,7 +187,7 @@ class FriendlyCassDB(log.Logger):
             print('Query(%s) failed!' % query)
             raise
 
-        # TO-DO: TEST WHERE THIS IS USING!
+        # TO-DO: TEST WHERE THIS IS USEFUL
         if not export:
             return resultSet
 
