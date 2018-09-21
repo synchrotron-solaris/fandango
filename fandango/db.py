@@ -40,8 +40,7 @@ This package implements a simplified acces to MySQL using FriendlyDB object.
 Go to http://mysql-python.sourceforge.net/MySQLdb.html for further information
 """
 
-from datetime import datetime, timedelta
-import time,datetime,log,traceback
+import time,log,traceback
 
 import MySQLdb
 """
@@ -63,6 +62,8 @@ To install it on Debian:
 
 
 # TO-DO: NEW STRONG REQUIREMENT TO FANDANGO!
+from datetime import datetime, timedelta
+
 from cassandra import cluster
 from cassandra.policies import RoundRobinPolicy
 from cassandra.auth import PlainTextAuthProvider
