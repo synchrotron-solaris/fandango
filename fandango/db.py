@@ -39,12 +39,28 @@ This package implements a simplified acces to MySQL using FriendlyDB object.
 
 Go to http://mysql-python.sourceforge.net/MySQLdb.html for further information
 """
-import time
-from datetime import datetime, timedelta
 
-import log
-import traceback
+from datetime import datetime, timedelta
+import time,datetime,log,traceback
+
 import MySQLdb
+"""
+Instead of using the outdated MySQL-python package or Oracle's mysql.connector, 
+try to install mysqlclient instead:
+
+https://pypi.org/project/mysqlclient/#description
+https://github.com/PyMySQL/mysqlclient-python
+https://mysqlclient.readthedocs.io
+
+To install it on Debian:
+  
+  sudo aptitude remove python-mysqldb
+  sudo aptitude install python-pip
+  sudo aptitude install libmariadbclient-dev
+  sudo pip install mysqlclient
+
+"""
+
 
 # TO-DO: NEW STRONG REQUIREMENT TO FANDANGO!
 from cassandra import cluster

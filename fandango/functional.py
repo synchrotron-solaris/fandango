@@ -170,15 +170,6 @@ def seqdiff(x,y,method=reldiff,floor=None):
         d = any(method(v,w,floor) for v,w in zip(x,y))
     return d
 
-def notNone(arg,default=None):
-    """ Returns arg if not None, else returns default. """
-    return [arg,default][arg is None]
-
-def isTrue(arg):
-    """ Returns True if arg is not None, not False and not an empty iterable. """
-    if hasattr(arg,'__len__'): return len(arg)
-    else: return arg
-
 def join(*seqs):
     """ It returns a list containing the objects of all given sequences. """
     if len(seqs)==1 and isSequence(seqs[0]):
@@ -317,7 +308,7 @@ def matchCl(exp,seq,terminate=False,extend=False):
                         for e in exp.split('&'))
             if re.match('^[!~]',exp):
                 return not matchCl(exp[1:],seq,terminate,extend=True) 
-        return re.match(toRegexp(exp.lower(),terminate=terminate),seq.lower())
+        return re.match(toRegexp(exp,terminate=terminate,lower=True),seq.lower())
     except:
         print('matchCl(%s,%s,%s,%s) failed'%(exp,seq,terminate,extend))
         raise
@@ -406,9 +397,9 @@ def toCl(exp,terminate=False,wildcards=('*',' '),lower=True):
     exp = exp.replace('(?p<','(?P<') #Preventing missing P<name> clausses
     return exp
     
-def toRegexp(exp,terminate=False):
+def toRegexp(exp,terminate=False,lower=False):
     """ Case sensitive version of the previous one, for backwards compatibility """
-    return toCl(exp,terminate,wildcards=('*',),lower=False)
+    return toCl(exp,terminate,wildcards=('*',),lower=lower)
     
 def filtersmart(seq,filters):
     """
@@ -493,6 +484,41 @@ penum = iPiped(lambda input: izip(count(),input) )
 pzip = iPiped(lambda i:izip(*i))
 ptext = iPiped(lambda input: '\n'.join(imap(str,input)))
 
+##############################################################################
+
+def notNone(arg,default=None):
+    """ Returns arg if not None, else returns default. """
+    return [arg,default][arg is None]
+
+def isTrue(arg):
+    """ Returns True if arg is not None, not False and not an empty iterable. """
+    if hasattr(arg,'__len__'): return len(arg)
+    else: return arg
+    
+NaN = float('nan')
+    
+def isNaN(seq):
+    return (isinstance(seq,(int,float)) and math.isnan(seq) or 
+                (isString(seq) and seq.lower().strip() == 'nan'))
+    
+def isNone(seq):
+    return seq is None or (isString(seq) and seq.lower().strip() in ('none','null','nan',''))
+
+def isFalse(seq):
+    return not seq or str(seq).lower().strip() in ('false','0','no')
+
+def isBool(seq,is_zero=True):
+    codes = ['true','yes','false','no']
+    if is_zero: codes+=['0','1']
+    if seq in (True,False):
+        return True
+    elif isString(seq):
+        return seq.lower() in codes #none/nan will not be considered boolean
+    else:
+        return False
+    
+##############################################################################
+
 ########################################################################
 ## Methods for identifying types        
 ########################################################################
@@ -527,18 +553,12 @@ def isNumber(seq):
         float(seq)
         return True
     except: return False
-    
-NaN = float('nan')
-    
-def isNaN(seq):
-    return (isinstance(seq,(int,float)) and math.isnan(seq) or 
-                (isString(seq) and seq.lower().strip() == 'nan'))
-    
-def isNone(seq):
-    return seq is None or (isString(seq) and seq.lower().strip() in ('none','null','nan',''))
 
-def isFalse(seq):
-    return not seq or str(seq).lower().strip() in ('false','0','no')
+def isDate(seq):
+    try:
+        return str2time(seq)
+    except:
+        return False
 
 def isGenerator(seq):
     from types import GeneratorType
@@ -609,22 +629,6 @@ def shape(seq):
     if isNested(seq):
       d.extend(shape(seq[0]))
     return d
-    
-def isBool(seq,is_zero=True):
-    codes = ['true','yes','false','no']
-    if is_zero: codes+=['0','1']
-    if seq in (True,False):
-        return True
-    elif isString(seq):
-        return seq.lower() in codes #none/nan will not be considered boolean
-    else:
-        return False
-    
-def isDate(seq):
-    try:
-        return str2time(seq)
-    except:
-        return False
 
 ###############################################################################
 
